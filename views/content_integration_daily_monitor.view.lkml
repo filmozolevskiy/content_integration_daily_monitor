@@ -13,6 +13,7 @@ view: content_integration_daily_monitor {
       SELECT
         date_added,
         day_added,
+        hour_of_day_added,
         airline_code,
         gds,
         gds_account_id,
@@ -62,10 +63,12 @@ view: content_integration_daily_monitor {
         AND {% condition destination_airport_code %} destination_airport_code {% endcondition %}
         AND {% condition origin_airport_code %} origin_airport_code {% endcondition %}
         AND {% condition route %} route {% endcondition %}
+        AND {% condition hour_of_day_added %} hour_of_day_added {% endcondition %}
       UNION ALL
       SELECT
         date_added,
         day_added,
+        hour_of_day_added,
         airline_code,
         gds,
         gds_account_id,
@@ -115,6 +118,7 @@ view: content_integration_daily_monitor {
         AND {% condition destination_airport_code %} destination_airport_code {% endcondition %}
         AND {% condition origin_airport_code %} origin_airport_code {% endcondition %}
         AND {% condition route %} route {% endcondition %}
+        AND {% condition hour_of_day_added %} hour_of_day_added {% endcondition %}
     ;;
   }
 
@@ -149,6 +153,30 @@ view: content_integration_daily_monitor {
     group_label: "1. DATE"
     label: "Source table"
     description: "daily = closed days from the daily Phoenix table. 15min = later days from the 15-minute table (intraday, incomplete)."
+  }
+
+  dimension: hour_of_day_added {
+    type: number
+    sql: ${TABLE}.hour_of_day_added ;;
+    group_label: "1. DATE"
+    label: "Hour of day"
+    description: "Hour (0-23) of date_added on the Phoenix row. America/New_York."
+  }
+
+  # Why (2026-09-01, FM): Today's weekday is incomplete. Comparing it to last
+  # week's same weekday as a full 24h day overstates last week. Yes keeps all
+  # hours on finished weekdays, and only hours before toHour(now()) on today's
+  # weekday. Do not use date_added < toStartOfHour(now()) — last week's 23:00
+  # is still before today's clock time, so that would keep last week's full day.
+  dimension: is_matched_complete_hours {
+    type: yesno
+    sql:
+      toDayOfWeek(${TABLE}.day_added) != toDayOfWeek(today())
+      OR ${hour_of_day_added} < toHour(now())
+    ;;
+    group_label: "1. DATE"
+    label: "Match complete hours"
+    description: "Yes = include the row in a same-hour comparison. Finished weekdays keep all 24 hours. Today's weekday keeps only hours before the current hour (example: 15:04 keeps hours 0-14 on this Tuesday and last Tuesday)."
   }
 
   dimension: booking_id {
